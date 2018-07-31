@@ -9,10 +9,12 @@ public class PlacementWidget : MonoBehaviour
     public float _hoverAmount = 0.01f;
     public float _radius = 1;
     public float _downLength = 0.1f;
-    public float _upLength = 2f;
     public int _radialTestCount = 10;
     public int _thetaTestCount = 36;
     public int _maxIterations = 500;
+    public float _errorTolerance = 0.001f;
+    public Color _successColor = Color.green;
+    public Color _failureColor = Color.red;
 
     private Transform _widgetInstance = null;
     private Camera _camera;
@@ -53,11 +55,11 @@ public class PlacementWidget : MonoBehaviour
             var renderer = _widgetInstance.gameObject.GetComponent<Renderer>();
             if (AdjustPlacement())
             {
-                renderer.material.color = Color.green;
+                renderer.material.SetColor ("_Color", _successColor);
             }
             else
             {
-                renderer.material.color = Color.red;
+                renderer.material.SetColor ("_Color", _failureColor);
             }
         }
         else
@@ -85,7 +87,7 @@ public class PlacementWidget : MonoBehaviour
 
     bool AdjustPlacement()
     {
-        float rMax = _radius / 2;
+        float rMax = _radius;
         var tMax = Mathf.PI * 2;
 
         var rCount = _radialTestCount;
@@ -126,14 +128,6 @@ public class PlacementWidget : MonoBehaviour
                 }
             }
 
-            if (slices.All(x => x.Count == 0))
-            {
-                _widgetInstance.position = _widgetInstance.rotation
-                                         * offset
-                                         + _widgetInstance.position;
-                return true;
-            }
-
 			var correctionVector = Vector3.zero;
 			var correctionAmount = 0f;
 			Vector3 maxStart = Vector3.zero;
@@ -163,7 +157,7 @@ public class PlacementWidget : MonoBehaviour
 					end,
 					direction,
 					_downLength,
-					0.0f,
+					0,
 					true
 				);
 				var distance = (end - edge).magnitude;
@@ -179,24 +173,51 @@ public class PlacementWidget : MonoBehaviour
 			Debug.DrawLine(maxEnd, maxEnd + -direction * 1, Color.red);
 			Debug.DrawLine(maxEdge, maxEdge + -direction * 1, Color.blue);
 
-			correctionAmount = Mathf.Max(correctionAmount, 0.0001f);
+            if (correctionAmount < _errorTolerance)
+            {
+                _widgetInstance.position = _widgetInstance.rotation
+                                         * offset
+                                         + _widgetInstance.position;
+                return true;
+            }
 
 			var oldOffset = offset;
             offset -= correctionAmount * correctionVector;
+            
+            // Only correct within the given radius.
+            if(offset.magnitude > _radius)
+            {
+                return false;
+            }
 
-			// TESTING CODE
             var oldOffsetPos = _widgetInstance.rotation
-                      * oldOffset
-                      + _widgetInstance.position;
+                * oldOffset
+                + _widgetInstance.position;
             var newOffsetPos = _widgetInstance.rotation
-                      * offset
-                      + _widgetInstance.position;
+                * offset
+                + _widgetInstance.position;
+            if (!Physics.Raycast(newOffsetPos, direction, _downLength))
+            {
+                return false;
+
+                // Constrain offset to surface.
+                // Experimental logic, causes jittering.
+                var edge = FindEdge(
+                    oldOffsetPos,
+                    newOffsetPos,
+                    direction, 
+                    _downLength, 
+                    0, 
+                    true);
+                var edgeDistance = (newOffsetPos - edge).magnitude;
+                offset += edgeDistance * correctionVector;
+            }
+            newOffsetPos = _widgetInstance.rotation
+                * offset
+                + _widgetInstance.position;
 			Debug.DrawLine(oldOffsetPos, newOffsetPos, Color.black);
 
         }
-		_widgetInstance.position = _widgetInstance.rotation
-								 * offset
-								 + _widgetInstance.position;
         return false;
     }
 
